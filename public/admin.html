@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Panel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<h2>Admin Dashboard</h2>
+<table border="1" width="100%">
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>IP</th>
+      <th>Country</th>
+      <th>Region</th>
+      <th>City</th>
+      <th>Org</th>
+      <th>Status</th>
+      <th>Last Active</th>
+    </tr>
+  </thead>
+  <tbody id="userTable"></tbody>
+</table>
+
+<script>
+let ws = new WebSocket(`ws://${location.host}`);
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({ type: "setAdmin" }));
+};
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+
+  if (msg.type === "userList") {
+    const tb = document.getElementById("userTable");
+    tb.innerHTML = "";
+
+    msg.users.forEach(u => {
+      tb.innerHTML += `
+        <tr>
+          <td>${u.username}</td>
+          <td>${u.ip}</td>
+          <td>${u.country}</td>
+          <td>${u.region}</td>
+          <td>${u.city}</td>
+          <td>${u.org}</td>
+          <td>${u.status}</td>
+          <td>${new Date(u.lastActive).toLocaleString()}</td>
+        </tr>
+      `;
+    });
+  }
+};
+</script>
+
+</body>
+</html>
+
