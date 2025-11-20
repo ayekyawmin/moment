@@ -9,18 +9,25 @@ import bcrypt from "bcryptjs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ---------------------------------------------------------
+// PORT + DATABASE LOCATION
+// ---------------------------------------------------------
 const app = express();
 const PORT = process.env.PORT || 3000;
-// When deployed on Render attach disk /data; set RENDER env var automatically on Render
-const DB_PATH = process.env.RENDER ? "/data" : ".";
 
-const usersDB = new sqlite3.Database(`${DB_PATH}/users.db`);
-const chatDB = new sqlite3.Database(`${DB_PATH}/chat.db`);
+// Render allows writing only inside /var/data
+// Local use → database saved in project folder
+const DB_FOLDER = process.env.RENDER ? "/var/data" : ".";
+
+const usersDB = new sqlite3.Database(`${DB_FOLDER}/users.db`);
+const chatDB = new sqlite3.Database(`${DB_FOLDER}/chat.db`);
 
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ---------------- DB INIT ----------------
+// ---------------------------------------------------------
+// DATABASE INITIALIZATION
+// ---------------------------------------------------------
 usersDB.serialize(() => {
   usersDB.run(`
     CREATE TABLE IF NOT EXISTS users(
@@ -30,15 +37,18 @@ usersDB.serialize(() => {
     )
   `);
 
-  // Create default admin if not exists (Option A)
+  // Create default admin at first start
   const defaultAdmin = "admin";
   const defaultPass = "admin123";
   const hash = bcrypt.hashSync(defaultPass, 8);
+
   usersDB.run(
     `INSERT OR IGNORE INTO users(username,password,admin) VALUES(?,?,1)`,
     [defaultAdmin, hash],
     (err) => {
-      if (!err) console.log(`Ensured admin account exists: username='${defaultAdmin}' password='${defaultPass}'`);
+      if (!err) {
+        console.log(`Admin ensured: username='${defaultAdmin}' password='${defaultPass}'`);
+      }
     }
   );
 });
@@ -68,7 +78,9 @@ chatDB.serialize(() => {
   `);
 });
 
-// ---------------- helpers ----------------
+// ---------------------------------------------------------
+// HELPER FUNCTIONS
+// ---------------------------------------------------------
 function isLocalIp(ip) {
   if (!ip) return true;
   if (ip === "127.0.0.1" || ip === "::1") return true;
@@ -77,7 +89,6 @@ function isLocalIp(ip) {
 }
 
 async function lookupIPInfo(ip) {
-  // ip param should not contain ::ffff: prefix
   if (!ip || isLocalIp(ip)) {
     return {
       ip: ip || "local",
@@ -87,14 +98,22 @@ async function lookupIPInfo(ip) {
       org: "Localhost"
     };
   }
+
   try {
-    // Node 18+ has global fetch
     const res = await fetch(`https://ipapi.co/${ip}/json/`);
-    if (!res.ok) throw new Error("failed");
+    if (!res.ok) throw new Error("bad response");
     const data = await res.json();
-    return data;
+
+    return {
+      ip,
+      country_name: data.country_name || "Unknown",
+      region: data.region || "Unknown",
+      city: data.city || "Unknown",
+      org: data.org || "Unknown"
+    };
   } catch (err) {
-    console.error("IP lookup error:", err.message);
+    console.log("Geo lookup failed:", err.message);
+
     return {
       ip,
       country_name: "Unknown",
@@ -105,47 +124,47 @@ async function lookupIPInfo(ip) {
   }
 }
 
-// ---------------- REST API ----------------
-
-// Register new user (normal user)
+// ---------------------------------------------------------
+// USER REGISTER
+// ---------------------------------------------------------
 app.post("/register", (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.json({ success: false, message: "Missing fields" });
+  if (!username || !password)
+    return res.json({ success: false, message: "Missing fields" });
 
   const hash = bcrypt.hashSync(password, 8);
+
   usersDB.run(
     "INSERT INTO users(username,password) VALUES(?,?)",
     [username, hash],
     (err) => {
-      if (err) {
-        console.error("Register error:", err.message);
-        return res.json({ success: false, message: "Username already exists" });
-      }
-      res.json({ success: true, message: "Registered successfully" });
+      if (err) return res.json({ success: false, message: "Username exists" });
+
+      res.json({ success: true, message: "Registered" });
     }
   );
 });
 
-// Login by username+password
+// ---------------------------------------------------------
+// USER LOGIN
+// ---------------------------------------------------------
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.json({ success: false, message: "Missing fields" });
+  if (!username || !password)
+    return res.json({ success: false, message: "Missing fields" });
 
   usersDB.get("SELECT * FROM users WHERE username = ?", [username], async (err, row) => {
-    if (err) {
-      console.error("Login DB error:", err);
-      return res.json({ success: false, message: "Server error" });
-    }
     if (!row) return res.json({ success: false, message: "Invalid login" });
 
     const match = bcrypt.compareSync(password, row.password);
     if (!match) return res.json({ success: false, message: "Invalid login" });
 
-    // get client IP (works behind proxies like Render)
-    let ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || req.ip;
+    let ip = req.headers["x-forwarded-for"]?.split(",")[0] ||
+             req.socket.remoteAddress ||
+             req.ip;
+
     ip = (ip || "").replace("::ffff:", "");
 
-    // Lookup geo (safe for local IP)
     const geo = await lookupIPInfo(ip);
 
     chatDB.run(
@@ -154,90 +173,95 @@ app.post("/login", async (req, res) => {
       [
         username,
         ip,
-        geo.country_name || "Unknown",
-        geo.region || "Unknown",
-        geo.city || "Unknown",
-        geo.org || "Unknown",
+        geo.country_name,
+        geo.region,
+        geo.city,
+        geo.org,
         "online",
         Date.now()
-      ],
-      (e) => {
-        if (e) console.error("logins insert error:", e.message);
-      }
+      ]
     );
 
     res.json({ success: true, username, admin: row.admin === 1 });
   });
 });
 
-// Admin: delete all messages/logins (must send admin username)
+// ---------------------------------------------------------
+// ADMIN FUNCTIONS
+// ---------------------------------------------------------
 app.post("/deleteAllMessages", (req, res) => {
   const { username } = req.body;
-  if (!username) return res.json({ success: false, message: "Missing username" });
+  if (!username) return res.json({ success: false });
 
-  usersDB.get("SELECT admin FROM users WHERE username = ?", [username], (err, row) => {
-    if (err || !row || row.admin !== 1) return res.json({ success: false, message: "Unauthorized" });
+  usersDB.get("SELECT admin FROM users WHERE username=?", [username], (err, row) => {
+    if (!row || row.admin !== 1)
+      return res.json({ success: false, message: "Unauthorized" });
 
-    chatDB.serialize(() => {
-      chatDB.run("DELETE FROM messages");
-      chatDB.run("DELETE FROM logins");
-    });
+    chatDB.run("DELETE FROM messages");
+    chatDB.run("DELETE FROM logins");
 
-    res.json({ success: true, message: "Deleted all messages and cleared login info" });
+    res.json({ success: true });
   });
 });
 
-// Admin: change admin username (requires current admin username in body to authorize)
+// Update admin username
 app.post("/admin/update-username", (req, res) => {
   const { adminUsername, newUsername } = req.body;
-  if (!adminUsername || !newUsername) return res.json({ success: false, message: "Missing fields" });
 
-  usersDB.get("SELECT admin FROM users WHERE username = ?", [adminUsername], (err, row) => {
-    if (err || !row || row.admin !== 1) return res.json({ success: false, message: "Unauthorized" });
+  usersDB.get("SELECT admin FROM users WHERE username=?", [adminUsername], (err, row) => {
+    if (!row || row.admin !== 1)
+      return res.json({ success: false });
 
-    // update admin username in users table and update logins table
-    usersDB.run("UPDATE users SET username = ? WHERE username = ?", [newUsername, adminUsername], function (e) {
-      if (e) return res.json({ success: false, message: "Failed to update username" });
-
-      chatDB.run("UPDATE logins SET username = ? WHERE username = ?", [newUsername, adminUsername], (ee) => {
-        if (ee) console.error("update logins error:", ee.message);
-        res.json({ success: true, message: "Admin username updated" });
-      });
-    });
+    usersDB.run(
+      "UPDATE users SET username=? WHERE username=?",
+      [newUsername, adminUsername],
+      () => {
+        chatDB.run(
+          "UPDATE logins SET username=? WHERE username=?",
+          [newUsername, adminUsername]
+        );
+        res.json({ success: true });
+      }
+    );
   });
 });
 
-// Admin: change admin password
+// Update admin password
 app.post("/admin/update-password", (req, res) => {
   const { adminUsername, newPassword } = req.body;
-  if (!adminUsername || !newPassword) return res.json({ success: false, message: "Missing fields" });
 
-  usersDB.get("SELECT admin FROM users WHERE username = ?", [adminUsername], (err, row) => {
-    if (err || !row || row.admin !== 1) return res.json({ success: false, message: "Unauthorized" });
+  usersDB.get("SELECT admin FROM users WHERE username=?", [adminUsername], (err, row) => {
+    if (!row || row.admin !== 1)
+      return res.json({ success: false });
 
     const hash = bcrypt.hashSync(newPassword, 8);
-    usersDB.run("UPDATE users SET password = ? WHERE username = ?", [hash, adminUsername], (e) => {
-      if (e) return res.json({ success: false, message: "Failed to update password" });
-      res.json({ success: true, message: "Admin password updated" });
-    });
+
+    usersDB.run(
+      "UPDATE users SET password=? WHERE username=?",
+      [hash, adminUsername],
+      () => res.json({ success: true })
+    );
   });
 });
 
-// ---------------- WEBSOCKET ----------------
-const server = app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+// ---------------------------------------------------------
+// WEBSOCKETS
+// ---------------------------------------------------------
+const server = app.listen(PORT, () =>
+  console.log(`Server running on PORT ${PORT}`)
+);
+
 const wss = new WebSocketServer({ server });
 
 function broadcast(obj) {
-  wss.clients.forEach(c => {
+  wss.clients.forEach((c) => {
     if (c.readyState === 1) c.send(JSON.stringify(obj));
   });
 }
 
-function sendAdminListToAdmins() {
+function sendAdminList() {
   chatDB.all("SELECT * FROM logins", (err, rows) => {
-    if (err) { console.error("sendAdminList err:", err); return; }
-    // Only send userList to clients that flagged isAdmin
-    wss.clients.forEach(c => {
+    wss.clients.forEach((c) => {
       if (c.isAdmin && c.readyState === 1) {
         c.send(JSON.stringify({ type: "userList", users: rows }));
       }
@@ -251,34 +275,38 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (raw) => {
     let data;
-    try { data = JSON.parse(raw); } catch { return; }
-
-    if (data.type === "setUser") {
-      ws.username = data.username;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return;
     }
 
+    if (data.type === "setUser") ws.username = data.username;
+
     if (data.type === "setAdmin") {
-      // client says it's admin - mark it and send admin list
       ws.isAdmin = true;
-      sendAdminListToAdmins();
+      sendAdminList();
     }
 
     if (data.type === "chat") {
       if (!ws.username) return;
-      // save message
-      chatDB.run("INSERT INTO messages (username,message,type) VALUES (?,?,?)", [ws.username, data.text, "chat"], (e) => {
-        if (e) console.error("save message err:", e.message);
-      });
+
+      chatDB.run(
+        "INSERT INTO messages(username,message,type) VALUES(?,?,?)",
+        [ws.username, data.text, "chat"]
+      );
+
       broadcast({ type: "chat", user: ws.username, text: data.text });
     }
   });
 
   ws.on("close", () => {
     if (!ws.username) return;
-    // mark offline
-    chatDB.run("UPDATE logins SET status = ?, lastActive = ? WHERE username = ?", ["offline", Date.now(), ws.username], (e) => {
-      if (e) console.error("update offline err:", e.message);
-      sendAdminListToAdmins();
-    });
+
+    chatDB.run(
+      "UPDATE logins SET status=?, lastActive=? WHERE username=?",
+      ["offline", Date.now(), ws.username],
+      () => sendAdminList()
+    );
   });
 });
