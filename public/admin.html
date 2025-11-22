@@ -1,60 +1,65 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Admin Panel</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8">
+<title>Admin Panel</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
 <h2>Admin Dashboard</h2>
-<table border="1" width="100%">
-  <thead>
-    <tr>
-      <th>Username</th>
-      <th>IP</th>
-      <th>Country</th>
-      <th>Region</th>
-      <th>City</th>
-      <th>Org</th>
-      <th>Status</th>
-      <th>Last Active</th>
-    </tr>
-  </thead>
-  <tbody id="userTable"></tbody>
-</table>
 
-<script>
-let ws = new WebSocket(`ws://${location.host}`);
+<!-- Admin account -->
+<div class="card">
+  <h3>Admin Account</h3>
+  <label>New username</label>
+  <input id="newAdminName" placeholder="New admin username" />
+  <button id="updateAdmNameBtn">Update Username</button>
 
-ws.onopen = () => {
-  ws.send(JSON.stringify({ type: "setAdmin" }));
-};
+  <label>New password</label>
+  <input id="newAdminPass" type="password" placeholder="New admin password" />
+  <button id="updateAdmPassBtn">Update Password</button>
 
-ws.onmessage = (e) => {
-  const msg = JSON.parse(e.data);
+  <p id="adminStatus" class="muted"></p>
+</div>
 
-  if (msg.type === "userList") {
-    const tb = document.getElementById("userTable");
-    tb.innerHTML = "";
+<!-- User list -->
+<div class="card">
+  <h3>Users</h3>
+  <table class="striped" border="1" width="100%">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Status</th>
+        <th>Last Active</th>
+        <th>Location</th>
+      </tr>
+    </thead>
+    <tbody id="usersTableBody"></tbody>
+  </table>
+</div>
 
-    msg.users.forEach(u => {
-      tb.innerHTML += `
-        <tr>
-          <td>${u.username}</td>
-          <td>${u.ip}</td>
-          <td>${u.country}</td>
-          <td>${u.region}</td>
-          <td>${u.city}</td>
-          <td>${u.org}</td>
-          <td>${u.status}</td>
-          <td>${new Date(u.lastActive).toLocaleString()}</td>
-        </tr>
-      `;
-    });
-  }
-};
-</script>
+<!-- Message history -->
+<div class="card">
+  <h3>Message History</h3>
+  <button id="deleteMsgsBtn">Delete Messages Only</button>
+  <button id="deleteAllBtn">Delete All Messages + Logins</button>
 
+  <table id="msgHistoryTable" class="striped" border="1" width="100%">
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Message</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="msgHistoryBody"></tbody>
+  </table>
+</div>
+
+<script src="admin.js" defer></script>
 </body>
 </html>
+
+
 

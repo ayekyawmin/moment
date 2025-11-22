@@ -7,17 +7,16 @@ import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 
-dotenv.config(); // Load .env
-
+dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ---------------- POSTGRES (SUPABASE) ----------------
+// -------------------- DATABASE --------------------
 if (!process.env.DATABASE_URL) {
-  console.error("❌ ERROR: DATABASE_URL not found in .env");
+  console.error("DATABASE_URL missing");
   process.exit(1);
 }
 
@@ -26,220 +25,180 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// ---------------- STATIC FILES ----------------
-app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "public")));
-
-// ---------------- DATABASE INIT ----------------
 async function initDB() {
-  try {
-    // Users table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users(
-        username TEXT PRIMARY KEY,
-        password TEXT,
-        admin BOOLEAN DEFAULT false
-      );
-    `);
-
-    // Default admin
-    const defaultAdmin = "admin";
-    const defaultPass = "admin123";
-    const hash = bcrypt.hashSync(defaultPass, 8);
-
-    await pool.query(
-      `INSERT INTO users(username,password,admin)
-       VALUES($1,$2,true)
-       ON CONFLICT (username) DO NOTHING`,
-      [defaultAdmin, hash]
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users(
+      username TEXT PRIMARY KEY,
+      password TEXT,
+      admin BOOLEAN DEFAULT false
     );
+  `);
 
-    console.log(`✔ Admin ensured: username='admin' password='admin123'`);
+  const hash = bcrypt.hashSync("admin123", 8);
+  await pool.query(`
+    INSERT INTO users(username,password,admin)
+    VALUES($1,$2,true)
+    ON CONFLICT DO NOTHING
+  `, ["admin", hash]);
 
-    // Logins table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS logins(
-        username TEXT,
-        ip TEXT,
-        country TEXT,
-        region TEXT,
-        city TEXT,
-        org TEXT,
-        status TEXT,
-        lastActive BIGINT
-      );
-    `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS logins(
+      username TEXT,
+      ip TEXT,
+      country TEXT,
+      region TEXT,
+      city TEXT,
+      org TEXT,
+      status TEXT,
+      lastActive BIGINT
+    );
+  `);
 
-    // Messages table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS messages(
-        id SERIAL PRIMARY KEY,
-        username TEXT,
-        message TEXT,
-        type TEXT,
-        time BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
-      );
-    `);
-
-    console.log("✔ Database initialization complete");
-  } catch (err) {
-    console.error("❌ Database init error:", err);
-  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages(
+      id SERIAL PRIMARY KEY,
+      username TEXT,
+      message TEXT,
+      type TEXT,
+      time BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+    );
+  `);
 }
 initDB();
 
-// ---------------- HELPERS ----------------
-function isLocalIp(ip) {
-  if (!ip) return true;
-  return (
-    ip === "127.0.0.1" ||
-    ip === "::1" ||
-    ip.startsWith("10.") ||
-    ip.startsWith("192.168.") ||
-    ip.startsWith("172.")
-  );
-}
+// -------------------- MIDDLEWARE --------------------
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-async function lookupIPInfo(ip) {
-  if (!ip || isLocalIp(ip)) {
-    return { ip, country_name: "Local", region: "Local", city: "Local", org: "Localhost" };
-  }
-  try {
-    const res = await fetch(`https://ipapi.co/${ip}/json/`);
-    const data = await res.json();
-    return {
-      ip,
-      country_name: data.country_name || "Unknown",
-      region: data.region || "Unknown",
-      city: data.city || "Unknown",
-      org: data.org || "Unknown"
-    };
-  } catch {
-    return { ip, country_name: "Unknown", region: "Unknown", city: "Unknown", org: "Unknown" };
-  }
-}
+function escapeHtml(s) { if (!s) return ""; return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
-// ---------------- REGISTER ----------------
+// -------------------- REGISTER --------------------
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password)
-    return res.json({ success: false, message: "Missing fields" });
+  if (!username || !password) return res.json({ success: false, message: "Missing fields" });
 
   const hash = bcrypt.hashSync(password, 8);
-
   try {
-    await pool.query("INSERT INTO users(username,password) VALUES($1,$2)", [
-      username,
-      hash,
-    ]);
-    res.json({ success: true, message: "Registered" });
-  } catch {
-    res.json({ success: false, message: "Username exists" });
+    await pool.query("INSERT INTO users(username,password) VALUES($1,$2)", [username, hash]);
+    res.json({ success: true, message: "Registered successfully" });
+  } catch (err) {
+    res.json({ success: false, message: "Username already exists" });
   }
 });
 
-// ---------------- LOGIN ----------------
+// -------------------- LOGIN --------------------
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-
-  const result = await pool.query("SELECT * FROM users WHERE username=$1", [
-    username,
-  ]);
+  const result = await pool.query("SELECT * FROM users WHERE username=$1", [username]);
   const row = result.rows[0];
   if (!row) return res.json({ success: false, message: "Invalid login" });
-
-  const match = bcrypt.compareSync(password, row.password);
-  if (!match) return res.json({ success: false, message: "Invalid login" });
-
-  let ip = req.headers["x-forwarded-for"]?.split(",")[0] ||
-           req.socket.remoteAddress ||
-           req.ip;
-  ip = ip.replace("::ffff:", "");
-
-  const geo = await lookupIPInfo(ip);
-
-  await pool.query(
-    `INSERT INTO logins(username,ip,country,region,city,org,status,lastActive)
-     VALUES($1,$2,$3,$4,$5,$6,'online',EXTRACT(EPOCH FROM NOW())::BIGINT)`,
-    [username, ip, geo.country_name, geo.region, geo.city, geo.org]
-  );
-
-  res.json({ success: true, username, admin: row.admin });
+  if (!bcrypt.compareSync(password, row.password)) return res.json({ success: false, message: "Invalid login" });
+  res.json({ success: true, username: row.username, admin: row.admin });
 });
 
-// ---------------- ADMIN ----------------
-app.post("/deleteAllMessages", async (req, res) => {
-  const { username } = req.body;
-  const result = await pool.query("SELECT admin FROM users WHERE username=$1", [
-    username,
-  ]);
-  if (!result.rows[0]?.admin)
-    return res.json({ success: false, message: "Unauthorized" });
+// -------------------- GET MESSAGES --------------------
+app.get("/messages", async (req, res) => {
+  const result = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
+  res.json({ success: true, messages: result.rows });
+});
 
+// -------------------- ADMIN ENDPOINTS --------------------
+app.get("/admin/messages", async (req, res) => {
+  const result = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
+  res.json({ success: true, messages: result.rows });
+});
+
+app.post("/admin/delete-messages", async (req, res) => {
+  const { username } = req.body;
+  const result = await pool.query("SELECT admin FROM users WHERE username=$1", [username]);
+  if (!result.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
+  await pool.query("DELETE FROM messages");
+  res.json({ success: true, message: "All messages deleted" });
+});
+
+app.post("/admin/delete-all", async (req, res) => {
+  const { username } = req.body;
+  const result = await pool.query("SELECT admin FROM users WHERE username=$1", [username]);
+  if (!result.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
   await pool.query("DELETE FROM messages");
   await pool.query("DELETE FROM logins");
-  res.json({ success: true });
+  res.json({ success: true, message: "All messages and logins deleted" });
 });
 
-// ---------------- WEBSOCKETS ----------------
-const server = app.listen(PORT, () =>
-  console.log(`Server running on PORT ${PORT}`)
-);
+app.post("/admin/update-username", async (req, res) => {
+  const { adminUsername, newUsername } = req.body;
+  const result = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
+  if (!result.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
+  await pool.query("UPDATE users SET username=$1 WHERE username=$2", [newUsername, adminUsername]);
+  res.json({ success: true, message: "Username updated" });
+});
 
+app.post("/admin/update-password", async (req, res) => {
+  const { adminUsername, newPassword } = req.body;
+  const result = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
+  if (!result.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
+  const hash = bcrypt.hashSync(newPassword, 8);
+  await pool.query("UPDATE users SET password=$1 WHERE username=$2", [hash, adminUsername]);
+  res.json({ success: true, message: "Password updated" });
+});
+
+// -------------------- WEBSOCKET --------------------
+const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 const wss = new WebSocketServer({ server });
 
-function broadcast(obj) {
-  wss.clients.forEach((c) => {
-    if (c.readyState === 1) c.send(JSON.stringify(obj));
-  });
-}
+const clients = new Map();
 
-async function sendAdminList() {
-  const result = await pool.query("SELECT * FROM logins");
-  const rows = result.rows;
-  wss.clients.forEach((c) => {
-    if (c.isAdmin && c.readyState === 1)
-      c.send(JSON.stringify({ type: "userList", users: rows }));
-  });
-}
+wss.on("connection", ws => {
+  let currentUser = null;
 
-wss.on("connection", (ws) => {
-  ws.username = null;
-  ws.isAdmin = false;
-
-  ws.on("message", async (raw) => {
-    let data;
+  ws.on("message", async msg => {
     try {
-      data = JSON.parse(raw);
-    } catch {
-      return;
-    }
+      const data = JSON.parse(msg);
 
-    if (data.type === "setUser") ws.username = data.username;
-    if (data.type === "setAdmin") {
-      ws.isAdmin = true;
-      await sendAdminList();
-    }
+      if (data.type === "setUser") {
+        currentUser = data.username;
+        clients.set(ws, currentUser);
+      }
 
-    if (data.type === "chat") {
-      if (!ws.username) return;
+      if (data.type === "setAdmin") {
+        clients.set(ws, "admin");
+        broadcastUserList();
+      }
 
-      await pool.query(
-        "INSERT INTO messages(username,message,type) VALUES($1,$2,'chat')",
-        [ws.username, data.text]
-      );
-
-      broadcast({ type: "chat", user: ws.username, text: data.text });
-    }
+      if (data.type === "chat") {
+        const text = escapeHtml(data.text);
+        if (!currentUser) return;
+        await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)", [currentUser, text]);
+        broadcast({ type: "chat", user: currentUser, text });
+      }
+    } catch (err) { console.error(err); }
   });
 
-  ws.on("close", async () => {
-    if (!ws.username) return;
-    await pool.query(
-      "UPDATE logins SET status='offline', lastActive=EXTRACT(EPOCH FROM NOW())::BIGINT WHERE username=$1",
-      [ws.username]
-    );
-    await sendAdminList();
+  ws.on("close", () => {
+    clients.delete(ws);
+    broadcastUserList();
   });
 });
+
+function broadcast(msg) {
+  const str = JSON.stringify(msg);
+  clients.forEach((v, ws) => {
+    if (ws.readyState === 1) ws.send(str);
+  });
+}
+
+async function broadcastUserList() {
+  const res = await pool.query("SELECT username,status,lastActive,ip,city,region,country FROM logins");
+  const users = res.rows.map(u => ({
+    username: u.username,
+    status: u.status || "offline",
+    lastActive: u.lastActive,
+    city: u.city,
+    region: u.region,
+    country: u.country
+  }));
+  broadcast({ type: "userList", users });
+}
+
+
 

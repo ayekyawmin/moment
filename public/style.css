@@ -9,14 +9,8 @@ button{background:var(--accent);cursor:pointer}
 .composer{display:flex;gap:8px}
 .composer input{flex:1}
 
-/* ---------- Myanmar Font ONLY for chat messages ---------- */
-.chat-row{
-  padding:6px;
-  border-radius:6px;
-  margin-bottom:6px;
-  background:#eef9ee;
-  font-family: "Noto Sans Myanmar", "Pyidaungsu", "Myanmar3", sans-serif;
-}
+/* Myanmar font for chat */
+.chat-row{padding:6px;border-radius:6px;margin-bottom:6px;background:#eef9ee;font-family: "Noto Sans Myanmar", "Pyidaungsu", "Myanmar3", sans-serif;}
 
 table{width:100%;border-collapse:collapse;margin-top:8px}
 th,td{border:1px solid #e2e2e2;padding:6px;text-align:left;font-size:0.95rem}
@@ -27,6 +21,7 @@ th,td{border:1px solid #e2e2e2;padding:6px;text-align:left;font-size:0.95rem}
   .composer{flex-direction:column}
   .composer input, .composer button{width:100%}
 }
+
 
 
 
