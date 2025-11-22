@@ -1,19 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Chat — Moment</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
 <!-- LOGIN -->
 <div id="loginArea" class="card">
   <h2>Login</h2>
-  <input id="loginUser" placeholder="Username" />
-  <input id="loginPass" type="password" placeholder="Password" />
-  <button id="loginBtn">Login</button>
+  <form autocomplete="off" onsubmit="return false;">
+    <input id="loginUser" name="loginUser" autocomplete="off" placeholder="Username" />
+    <input id="loginPass" name="loginPass" type="password" autocomplete="new-password" placeholder="Password" />
+    <button id="loginBtn" type="button">Login</button>
+  </form>
   <p><a href="#" id="showReg">Register</a></p>
   <p id="loginMessage" class="muted"></p>
 </div>
@@ -21,9 +23,11 @@
 <!-- REGISTER -->
 <div id="registerArea" class="card" style="display:none;">
   <h2>Register</h2>
-  <input id="regUser" placeholder="Username" />
-  <input id="regPass" type="password" placeholder="Password" />
-  <button id="regBtn">Register</button>
+  <form autocomplete="off" onsubmit="return false;">
+    <input id="regUser" name="regUser" autocomplete="off" placeholder="Username" />
+    <input id="regPass" name="regPass" type="password" autocomplete="new-password" placeholder="Password" />
+    <button id="regBtn" type="button">Register</button>
+  </form>
   <p><a href="#" id="backToLogin">Back to login</a></p>
   <p id="registerMessage" class="muted"></p>
 </div>
@@ -41,6 +45,7 @@
 <script src="main.js" defer></script>
 </body>
 </html>
+
 
 
 
