@@ -26,6 +26,7 @@ const pool = new Pool({
 });
 
 async function initDB() {
+  // Users table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users(
       username TEXT PRIMARY KEY,
@@ -34,13 +35,16 @@ async function initDB() {
     );
   `);
 
-  const hash = bcrypt.hashSync("admin123", 8);
+  // Ensure admin exists and password is correct
+  const adminPass = "admin123";
+  const hash = bcrypt.hashSync(adminPass, 8);
   await pool.query(`
     INSERT INTO users(username,password,admin)
     VALUES($1,$2,true)
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (username) DO UPDATE SET password=$2
   `, ["admin", hash]);
 
+  // Logins table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS logins(
       username TEXT,
@@ -54,6 +58,7 @@ async function initDB() {
     );
   `);
 
+  // Messages table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages(
       id SERIAL PRIMARY KEY,
@@ -63,6 +68,8 @@ async function initDB() {
       time BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
     );
   `);
+
+  console.log("✅ Database initialized and admin ensured");
 }
 initDB();
 
@@ -81,7 +88,7 @@ app.post("/register", async (req, res) => {
   try {
     await pool.query("INSERT INTO users(username,password) VALUES($1,$2)", [username, hash]);
     res.json({ success: true, message: "Registered successfully" });
-  } catch (err) {
+  } catch {
     res.json({ success: false, message: "Username already exists" });
   }
 });
@@ -145,33 +152,40 @@ app.post("/admin/update-password", async (req, res) => {
 // -------------------- WEBSOCKET --------------------
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 const wss = new WebSocketServer({ server });
-
 const clients = new Map();
 
 wss.on("connection", ws => {
   let currentUser = null;
+  let isAdmin = false;
 
   ws.on("message", async msg => {
     try {
       const data = JSON.parse(msg);
 
+      // Normal user
       if (data.type === "setUser") {
         currentUser = data.username;
-        clients.set(ws, currentUser);
+        clients.set(ws, { username: currentUser, admin: false });
       }
 
+      // Admin
       if (data.type === "setAdmin") {
-        clients.set(ws, "admin");
+        isAdmin = true;
+        clients.set(ws, { username: "admin", admin: true });
         broadcastUserList();
       }
 
+      // Chat
       if (data.type === "chat") {
         const text = escapeHtml(data.text);
-        if (!currentUser) return;
-        await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)", [currentUser, text]);
-        broadcast({ type: "chat", user: currentUser, text });
+        if (!currentUser && !isAdmin) return;
+        const user = isAdmin ? "admin" : currentUser;
+        await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)", [user, text]);
+        broadcast({ type: "chat", user, text });
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+    }
   });
 
   ws.on("close", () => {
@@ -182,7 +196,7 @@ wss.on("connection", ws => {
 
 function broadcast(msg) {
   const str = JSON.stringify(msg);
-  clients.forEach((v, ws) => {
+  clients.forEach(({ admin }, ws) => {
     if (ws.readyState === 1) ws.send(str);
   });
 }
@@ -199,6 +213,7 @@ async function broadcastUserList() {
   }));
   broadcast({ type: "userList", users });
 }
+
 
 
 
