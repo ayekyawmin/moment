@@ -1,42 +1,46 @@
-
+// admin.js
 let ws = null;
-let username = "admin"; // default admin
+let adminUsername = null;
+
 const $ = id => document.getElementById(id);
 
-// ---------------- ESCAPE HTML ----------------
 function escapeHtml(s){ if(!s) return ""; return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+// ---------------- LOGIN ----------------
+$("loginBtn").onclick = async () => {
+  const u = $("loginUser").value.trim();
+  const p = $("loginPass").value.trim();
+  if(!u||!p){ $("loginMessage").innerText="Enter username & password"; return; }
+
+  const res = await fetch("/login", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({username:u,password:p})
+  });
+  const data = await res.json();
+
+  if(!data.success){ $("loginMessage").innerText=data.message; return; }
+  if(!data.admin){ $("loginMessage").innerText="Use admin login"; return; }
+
+  adminUsername = data.username;
+  $("loginArea").style.display="none";
+  $("adminArea").style.display="block";
+
+  startWebSocket();
+  loadAdminMessages();
+  loadUsersList();
+};
 
 // ---------------- WEBSOCKET ----------------
 function startWebSocket() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${proto}//${location.host}`);
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "setAdmin" }));
-  };
-
+  ws.onopen = ()=>ws.send(JSON.stringify({type:"setAdmin"}));
   ws.onmessage = e => {
     const data = JSON.parse(e.data);
-    if(data.type === "userList") renderActiveUsers(data.users);
+    if(data.type==="userList") renderUsersTable(data.users);
+    else if(data.type==="chat") loadAdminMessages();
   };
-}
-
-// ---------------- ACTIVE USERS ----------------
-function renderActiveUsers(users){
-  const tbody = $("usersTableBody");
-  tbody.innerHTML = "";
-  users.forEach(u => {
-    const last = u.lastActive ? new Date(u.lastActive*1000).toLocaleString() : "-";
-    const loc = `${u.city || "-"}, ${u.region || "-"}, ${u.country || "-"}`;
-    tbody.innerHTML += `
-      <tr>
-        <td>${escapeHtml(u.username)}</td>
-        <td>${escapeHtml(u.status)}</td>
-        <td>${escapeHtml(last)}</td>
-        <td>${escapeHtml(loc)}</td>
-      </tr>
-    `;
-  });
 }
 
 // ---------------- MESSAGES ----------------
@@ -46,105 +50,96 @@ async function loadAdminMessages() {
   const tbody = $("msgHistoryBody");
   tbody.innerHTML = "";
   if(data.success){
-    data.messages.forEach(m => {
-      tbody.innerHTML += `
-        <tr>
-          <td>${escapeHtml(m.username)}</td>
-          <td>${escapeHtml(m.message)}</td>
-          <td>${new Date(m.time*1000).toLocaleString()}</td>
-        </tr>
-      `;
+    data.messages.forEach(m=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${escapeHtml(m.username)}</td><td>${escapeHtml(m.message)}</td><td>${new Date(m.time*1000).toLocaleString()}</td>`;
+      tbody.appendChild(tr);
     });
   }
 }
 
-// ---------------- REGISTERED USERS ----------------
-async function loadRegisteredUsers() {
+// ---------------- USERS ----------------
+async function loadUsersList() {
   const res = await fetch("/admin/users");
   const data = await res.json();
-  const tbody = $("registeredUsersBody");
-  tbody.innerHTML = "";
-  if(data.success){
-    data.users.forEach(u => {
-      if(!u.admin){
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${escapeHtml(u.username)}</td>
-          <td><button onclick="deleteUser('${u.username}')">Delete</button></td>
-        `;
-        tbody.appendChild(tr);
-      }
-    });
-  }
+  if(data.success) renderUsersTable(data.users);
 }
 
-async function deleteUser(usernameToDelete){
-  if(!confirm(`Delete user ${usernameToDelete}?`)) return;
-  const res = await fetch("/admin/delete-user", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ adminUsername: username, usernameToDelete })
+function renderUsersTable(users){
+  const tbody = $("usersTableBody");
+  tbody.innerHTML = "";
+  users.forEach(u=>{
+    const tr = document.createElement("tr");
+    const last = u.lastActive ? new Date(u.lastActive*1000).toLocaleString() : "-";
+    const loc = `${u.city||"-"}, ${u.region||"-"}, ${u.country||"-"}`;
+    tr.innerHTML = `<td>${escapeHtml(u.username)}</td><td>${escapeHtml(last)}</td><td>${escapeHtml(loc)}</td><td><button class="delUserBtn" data-user="${escapeHtml(u.username)}">Delete</button></td>`;
+    tbody.appendChild(tr);
   });
-  const data = await res.json();
-  $("adminStatus").innerText = data.message;
-  loadRegisteredUsers();
+
+  document.querySelectorAll(".delUserBtn").forEach(btn=>{
+    btn.onclick = async ()=>{
+      if(!confirm(`Delete user ${btn.dataset.user}?`)) return;
+      const res = await fetch("/admin/delete-user", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({adminUsername, username: btn.dataset.user})
+      });
+      const data = await res.json();
+      alert(data.message);
+      loadUsersList();
+    };
+  });
 }
 
 // ---------------- DELETE MESSAGES ----------------
-async function deleteMessagesOnly() {
+$("deleteMessagesBtn").onclick = async ()=>{
   if(!confirm("Delete all messages?")) return;
   const res = await fetch("/admin/delete-messages", {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ username })
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({adminUsername})
   });
   const data = await res.json();
-  $("adminStatus").innerText = data.message;
+  alert(data.message);
   loadAdminMessages();
-}
+};
 
-async function deleteAll() {
-  if(!confirm("Delete all messages and logins?")) return;
+$("deleteAllBtn").onclick = async ()=>{
+  if(!confirm("Delete messages + logins + non-admin users?")) return;
   const res = await fetch("/admin/delete-all", {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ username })
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({adminUsername})
   });
   const data = await res.json();
-  $("adminStatus").innerText = data.message;
+  alert(data.message);
   loadAdminMessages();
-  startWebSocket(); // refresh active users
-}
+  loadUsersList();
+};
 
 // ---------------- UPDATE ADMIN ----------------
-async function updateAdminName() {
+$("updateAdmNameBtn").onclick = async ()=>{
   const newName = $("newAdminName").value.trim();
   if(!newName){ $("adminStatus").innerText="Enter new username"; return; }
   const res = await fetch("/admin/update-username", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ adminUsername: username, newUsername: newName })
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({adminUsername, newUsername:newName})
   });
   const data = await res.json();
   $("adminStatus").innerText = data.message;
-  if(data.success) username = newName;
-}
+  if(data.success) adminUsername=newName;
+};
 
-async function updateAdminPassword() {
+$("updateAdmPassBtn").onclick = async ()=>{
   const newPass = $("newAdminPass").value.trim();
   if(!newPass){ $("adminStatus").innerText="Enter new password"; return; }
   const res = await fetch("/admin/update-password", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ adminUsername: username, newPassword: newPass })
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({adminUsername, newPassword:newPass})
   });
   const data = await res.json();
   $("adminStatus").innerText = data.message;
   if(data.success) $("newAdminPass").value="";
-}
-
-// ---------------- INIT ----------------
-document.addEventListener("DOMContentLoaded", () => {
-  startWebSocket();
-  loadAdminMessages();
-  loadRegisteredUsers();
-
-  $("deleteMsgsBtn").onclick = deleteMessagesOnly;
-  $("deleteAllBtn").onclick = deleteAll;
-  $("updateAdmNameBtn").onclick = updateAdminName;
-  $("updateAdmPassBtn").onclick = updateAdminPassword;
-});
+};

@@ -116,6 +116,44 @@ app.get("/messages", async (req, res) => {
   res.json({ success: true, messages: result.rows });
 });
 
+// Get all registered users (non-admin)
+app.get("/admin/users", async (req,res)=>{
+  const result = await pool.query("SELECT username,lastActive,city,region,country,admin FROM users LEFT JOIN logins USING(username) ORDER BY username ASC");
+  const users = result.rows.filter(u=>!u.admin);
+  res.json({success:true, users});
+});
+
+// Delete single user
+app.post("/admin/delete-user", async (req,res)=>{
+  const { adminUsername, username } = req.body;
+  const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
+  if(!adminCheck.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
+  await pool.query("DELETE FROM users WHERE username=$1 AND admin=false", [username]);
+  await pool.query("DELETE FROM logins WHERE username=$1", [username]);
+  res.json({success:true,message:`User ${username} deleted`});
+});
+
+// Delete messages only
+app.post("/admin/delete-messages", async (req,res)=>{
+  const { adminUsername } = req.body;
+  const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
+  if(!adminCheck.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
+  await pool.query("DELETE FROM messages");
+  res.json({success:true,message:"All messages deleted"});
+});
+
+// Delete messages + logins + non-admin users
+app.post("/admin/delete-all", async (req,res)=>{
+  const { adminUsername } = req.body;
+  const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
+  if(!adminCheck.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
+  await pool.query("DELETE FROM messages");
+  await pool.query("DELETE FROM logins");
+  await pool.query("DELETE FROM users WHERE admin=false");
+  res.json({success:true,message:"All messages, logins, and non-admin users deleted"});
+});
+
+
 // -------------------- ADMIN ENDPOINTS --------------------
 app.get("/admin/messages", async (req, res) => {
   const result = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");

@@ -1,80 +1,75 @@
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Admin Panel</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Panel</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<h2>Admin Dashboard</h2>
-
-<!-- Admin account update -->
-<div class="card">
-  <h3>Admin Account</h3>
-  <label>New username</label>
-  <input id="newAdminName" placeholder="New admin username" />
-  <button id="updateAdmNameBtn">Update Username</button>
-
-  <label>New password</label>
-  <input id="newAdminPass" type="password" placeholder="New admin password" />
-  <button id="updateAdmPassBtn">Update Password</button>
-
-  <p id="adminStatus" class="muted"></p>
+<div id="loginArea" class="card">
+  <h2>Admin Login</h2>
+  <input id="loginUser" placeholder="Username">
+  <input id="loginPass" type="password" placeholder="Password">
+  <button id="loginBtn">Login</button>
+  <p id="loginMessage" class="muted"></p>
 </div>
 
-<!-- Active users / logins -->
-<div class="card">
-  <h3>Users</h3>
-  <table class="striped">
-    <thead>
-      <tr>
-        <th>Username</th>
-        <th>Status</th>
-        <th>Last Active</th>
-        <th>Location</th>
-      </tr>
-    </thead>
-    <tbody id="usersTableBody"></tbody>
-  </table>
-</div>
+<div id="adminArea" class="card" style="display:none;">
+  <h2>Admin Dashboard</h2>
 
-<!-- Message history -->
-<div class="card">
-  <h3>Message History</h3>
-  <button id="deleteMsgsBtn">Delete Messages Only</button>
-  <button id="deleteAllBtn">Delete Messages + Logins</button>
+  <!-- Admin account update -->
+  <div class="card">
+    <h3>Update Admin Account</h3>
+    <label>New username</label>
+    <input id="newAdminName" placeholder="New admin username">
+    <button id="updateAdmNameBtn">Update Username</button>
 
-  <table class="striped">
-    <thead>
-      <tr>
-        <th>User</th>
-        <th>Message</th>
-        <th>Time</th>
-      </tr>
-    </thead>
-    <tbody id="msgHistoryBody"></tbody>
-  </table>
-</div>
+    <label>New password</label>
+    <input id="newAdminPass" type="password" placeholder="New admin password">
+    <button id="updateAdmPassBtn">Update Password</button>
 
-<!-- Registered users (deletable individually) -->
-<div class="card">
-  <h3>Registered Users</h3>
-  <table class="striped">
-    <thead>
-      <tr>
-        <th>Username</th>
-        <th>Delete</th>
-      </tr>
-    </thead>
-    <tbody id="registeredUsersBody"></tbody>
-  </table>
+    <p id="adminStatus" class="muted"></p>
+  </div>
+
+  <!-- Users list -->
+  <div class="card">
+    <h3>Registered Users</h3>
+    <table id="usersTable" class="striped">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Last Active</th>
+          <th>Location</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="usersTableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Message history -->
+  <div class="card">
+    <h3>Message History</h3>
+    <button id="deleteMessagesBtn">Delete Messages Only</button>
+    <button id="deleteAllBtn">Delete Messages + Logins + Non-Admin Users</button>
+
+    <table id="msgHistoryTable" class="striped">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Message</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody id="msgHistoryBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script src="admin.js" defer></script>
 </body>
 </html>
+
 
