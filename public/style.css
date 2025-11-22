@@ -2,21 +2,32 @@
 body{font-family:Segoe UI,Arial,sans-serif;margin:0;padding:12px;background:var(--soft);color:#222}
 .card{max-width:640px;margin:12px auto;padding:14px;background:var(--card-bg);border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
 h2,h3{margin:8px 0}
-input,button,textarea{font-size:1rem;padding:10px;margin:6px 0;border-radius:8px;border:1px solid #ccc}
+input,button,textarea{font-size:1rem;margin:6px 0;border-radius:8px;border:1px solid #ccc;padding:10px}
 button{background:var(--accent);cursor:pointer}
 .muted{color:#666;font-size:0.9rem}
 #messages{height:360px;overflow:auto;border:1px solid #ddd;padding:10px;background:#fafafa;border-radius:8px}
 .composer{display:flex;gap:8px}
 .composer input{flex:1}
-.chat-row{padding:6px;border-radius:6px;margin-bottom:6px;background:#eef9ee}
+
+/* ---------- Myanmar Font ONLY for chat messages ---------- */
+.chat-row{
+  padding:6px;
+  border-radius:6px;
+  margin-bottom:6px;
+  background:#eef9ee;
+  font-family: "Noto Sans Myanmar", "Pyidaungsu", "Myanmar3", sans-serif;
+}
+
 table{width:100%;border-collapse:collapse;margin-top:8px}
 th,td{border:1px solid #e2e2e2;padding:6px;text-align:left;font-size:0.95rem}
+
 @media(max-width:600px){
   .card{margin:8px;padding:12px}
   #messages{height:240px}
   .composer{flex-direction:column}
   .composer input, .composer button{width:100%}
 }
+
 
 
 
