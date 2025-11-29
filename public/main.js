@@ -26,25 +26,41 @@ document.addEventListener("DOMContentLoaded", () => {
   $("msgInput").addEventListener("keypress", e => { if(e.key==="Enter") sendMessage(); });
 });
 
-async function register(){
+async function register() {
   const u = $("regUser").value.trim();
   const p = $("regPass").value.trim();
-  if(!u||!p){ $("registerMessage").innerText="Enter username & password"; return; }
+  if (!u || !p) {
+    $("registerMessage").innerText = "Enter username & password";
+    $("registerMessage").style.color = "red";
+    return;
+  }
 
   const res = await fetch("/register", {
-    method:"POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({username:u,password:p})
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: u, password: p })
   });
 
   const data = await res.json();
-  $("registerMessage").innerText = data.message;
 
-  if(data.success){
-    $("registerArea").style.display="none";
-    $("loginArea").style.display="block";
+  if (data.success) {
+    $("registerMessage").innerText = "You are registered! Log in now.";
+    $("registerMessage").style.color = "green";
+    // Clear input fields
+    $("regUser").value = "";
+    $("regPass").value = "";
+    // Switch back to login after 2 seconds
+    setTimeout(() => {
+      $("registerArea").style.display = "none";
+      $("loginArea").style.display = "block";
+      $("registerMessage").innerText = "";
+    }, 2000);
+  } else {
+    $("registerMessage").innerText = data.message;
+    $("registerMessage").style.color = "red";
   }
 }
+
 
 async function login(){
   const u = $("loginUser").value.trim();
