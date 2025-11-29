@@ -54,7 +54,7 @@ async function register() {
       $("registerArea").style.display = "none";
       $("loginArea").style.display = "block";
       $("registerMessage").innerText = "";
-    }, 5000);
+    }, 3000);
   } else {
     $("registerMessage").innerText = data.message;
     $("registerMessage").style.color = "red";
