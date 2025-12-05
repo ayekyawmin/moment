@@ -24,6 +24,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // Chat send
   $("sendBtn").onclick = sendMessage;
   $("msgInput").addEventListener("keypress", e => { if(e.key==="Enter") sendMessage(); });
+
+  // Logout
+  $("logoutBtn").onclick = () => {
+    // close websocket and reset UI
+    if(ws) ws.close();
+    username = null;
+    isAdmin = false;
+    $("chatArea").style.display = "none";
+    $("loginArea").style.display = "block";
+    $("loginUser").value = "";
+    $("loginPass").value = "";
+    $("who").innerText = "-";
+    $("messages").innerHTML = "";
+  };
 });
 
 async function register() {
@@ -54,7 +68,7 @@ async function register() {
       $("registerArea").style.display = "none";
       $("loginArea").style.display = "block";
       $("registerMessage").innerText = "";
-    }, 3000);
+    }, 2000);
   } else {
     $("registerMessage").innerText = data.message;
     $("registerMessage").style.color = "red";
@@ -65,29 +79,38 @@ async function register() {
 async function login(){
   const u = $("loginUser").value.trim();
   const p = $("loginPass").value.trim();
-  if(!u||!p){ $("loginMessage").innerText="Enter username & password"; return; }
+  if(!u||!p){ $("loginMessage").innerText="Enter username & password"; $("loginMessage").style.color="red"; return; }
 
-  const res = await fetch("/login", {
-    method:"POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({username:u,password:p})
-  });
+  $("loginMessage").innerText = "Logging in...";
+  $("loginMessage").style.color = "var(--muted)";
 
-  const data = await res.json();
-  if(!data.success){ $("loginMessage").innerText = data.message; return; }
+  try {
+    const res = await fetch("/login", {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({username:u,password:p})
+    });
 
-  username = data.username;
-  isAdmin = data.admin;
+    const data = await res.json();
+    if(!data.success){ $("loginMessage").innerText = data.message; $("loginMessage").style.color="red"; return; }
 
-  $("loginArea").style.display="none";
-  $("registerArea").style.display="none";
+    username = data.username;
+    isAdmin = data.admin;
 
-  if(isAdmin){
-    window.location.href = "/admin.html"; // redirect admin to admin page
-  } else {
-    $("chatArea").style.display="block";
-    $("who").innerText = username;
-    startWebSocket();
+    $("loginArea").style.display="none";
+    $("registerArea").style.display="none";
+
+    if(isAdmin){
+      window.location.href = "/admin.html"; // redirect admin to admin page
+    } else {
+      $("chatArea").style.display="block";
+      $("who").innerText = username;
+      startWebSocket();
+    }
+  } catch (err) {
+    console.error(err);
+    $("loginMessage").innerText = "Server error";
+    $("loginMessage").style.color = "red";
   }
 }
 
@@ -105,9 +128,17 @@ function startWebSocket(){
   };
 
   ws.onmessage = e => {
-    const data = JSON.parse(e.data);
-    if(data.type==="chat") appendChat(data.user,data.text);
+    try {
+      const data = JSON.parse(e.data);
+      if(data.type==="chat") appendChat(data.user,data.text);
+    } catch(err) { console.error("ws message parse", err); }
   };
+
+  ws.onclose = () => {
+    // user went offline — server will update logins on disconnect if implemented
+  };
+
+  ws.onerror = (ev) => console.error("WebSocket error", ev);
 }
 
 function appendChat(user,text){
@@ -129,10 +160,3 @@ function sendMessage(){
 
 // ---------------- Helper ----------------
 function escapeHtml(s){ if(!s) return ""; return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-
-
-
-
-
-
-

@@ -1,4 +1,3 @@
-// admin.js
 let ws = null;
 let adminUsername = null;
 
@@ -37,10 +36,13 @@ function startWebSocket() {
   ws = new WebSocket(`${proto}//${location.host}`);
   ws.onopen = ()=>ws.send(JSON.stringify({type:"setAdmin"}));
   ws.onmessage = e => {
-    const data = JSON.parse(e.data);
-    if(data.type==="userList") renderUsersTable(data.users);
-    else if(data.type==="chat") loadAdminMessages();
+    try {
+      const data = JSON.parse(e.data);
+      if(data.type==="userList") renderUsersTable(data.users);
+      else if(data.type==="chat") loadAdminMessages();
+    } catch(err) { console.error("ws parse", err); }
   };
+  ws.onerror = (ev) => console.error("ws error", ev);
 }
 
 // ---------------- MESSAGES ----------------
@@ -52,6 +54,7 @@ async function loadAdminMessages() {
   if(data.success){
     data.messages.forEach(m=>{
       const tr = document.createElement("tr");
+      // server stores time as epoch seconds in messages.time
       tr.innerHTML = `<td>${escapeHtml(m.username)}</td><td>${escapeHtml(m.message)}</td><td>${new Date(m.time*1000).toLocaleString()}</td>`;
       tbody.appendChild(tr);
     });
@@ -69,10 +72,11 @@ function renderUsersTable(users){
   const tbody = $("usersTableBody");
   tbody.innerHTML = "";
   users.forEach(u=>{
-    const tr = document.createElement("tr");
-    const last = u.lastActive ? new Date(u.lastActive*1000).toLocaleString() : "-";
+    const last = u.lastactive || u.lastActive || u.last_active || u.lastActive; // handle case-insensitive names
+    const lastStr = last ? new Date(Number(last)*1000).toLocaleString() : "-";
     const loc = `${u.city||"-"}, ${u.region||"-"}, ${u.country||"-"}`;
-    tr.innerHTML = `<td>${escapeHtml(u.username)}</td><td>${escapeHtml(last)}</td><td>${escapeHtml(loc)}</td><td><button class="delUserBtn" data-user="${escapeHtml(u.username)}">Delete</button></td>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(u.username)}</td><td>${escapeHtml(lastStr)}</td><td>${escapeHtml(loc)}</td><td><button class="delUserBtn" data-user="${escapeHtml(u.username)}">Delete</button></td>`;
     tbody.appendChild(tr);
   });
 
@@ -85,7 +89,7 @@ function renderUsersTable(users){
         body:JSON.stringify({adminUsername, username: btn.dataset.user})
       });
       const data = await res.json();
-      alert(data.message);
+      alert(data.message || (data.success ? "Deleted" : "Failed"));
       loadUsersList();
     };
   });
@@ -100,7 +104,7 @@ $("deleteMessagesBtn").onclick = async ()=>{
     body:JSON.stringify({adminUsername})
   });
   const data = await res.json();
-  alert(data.message);
+  alert(data.message || (data.success ? "Deleted" : "Failed"));
   loadAdminMessages();
 };
 
@@ -112,7 +116,7 @@ $("deleteAllBtn").onclick = async ()=>{
     body:JSON.stringify({adminUsername})
   });
   const data = await res.json();
-  alert(data.message);
+  alert(data.message || (data.success ? "Deleted" : "Failed"));
   loadAdminMessages();
   loadUsersList();
 };

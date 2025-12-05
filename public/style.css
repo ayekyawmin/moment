@@ -1,28 +1,74 @@
-:root{--card-bg:#ffffff;--soft:#f0f8ff;--accent:#fffacd}
-body{font-family:Segoe UI,Arial,sans-serif;margin:0;padding:12px;background:var(--soft);color:#222}
-.card{max-width:640px;margin:12px auto;padding:14px;background:var(--card-bg);border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
-h2,h3{margin:8px 0}
-input,button,textarea{font-size:1rem;margin:6px 0;border-radius:8px;border:1px solid #ccc;padding:10px}
-button{background:var(--accent);cursor:pointer}
-.muted{color:#666;font-size:0.9rem}
-#messages{height:360px;overflow:auto;border:1px solid #ddd;padding:10px;background:#fafafa;border-radius:8px}
-.composer{display:flex;gap:8px}
-.composer input{flex:1}
-
-/* Myanmar font for chat */
-.chat-row{padding:6px;border-radius:6px;margin-bottom:6px;background:#eef9ee;font-family: "Noto Sans Myanmar", "Pyidaungsu", "Myanmar3", sans-serif;}
-
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th,td{border:1px solid #e2e2e2;padding:6px;text-align:left;font-size:0.95rem}
-
-@media(max-width:600px){
-  .card{margin:8px;padding:12px}
-  #messages{height:240px}
-  .composer{flex-direction:column}
-  .composer input, .composer button{width:100%}
+:root {
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --muted: #666;
+  --accent: #2b7cff;
 }
 
+* { box-sizing: border-box; font-family: Inter, system-ui, Arial, sans-serif; }
 
+body {
+  margin: 0;
+  padding: 20px;
+  background: var(--bg);
+  color: #111;
+}
 
+#container {
+  max-width: 720px;
+  margin: 12px auto;
+  display: grid;
+  gap: 12px;
+}
 
+/* card */
+.card {
+  background: var(--card);
+  padding: 14px;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+}
 
+/* inputs & buttons */
+input {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid #e3e6ea;
+  font-size: 14px;
+}
+
+button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+a { color: var(--accent); text-decoration: none; align-self:center; }
+
+/* messages */
+.messages {
+  height: 360px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fafbff;
+  border: 1px solid #eef2ff;
+  margin: 12px 0;
+}
+
+.chat-row { padding: 6px 8px; border-bottom: 1px solid rgba(0,0,0,0.03); }
+.chat-row strong { margin-right: 8px; }
+
+/* composer */
+.composer { display:flex; gap:8px; align-items:center; }
+.composer input { flex:1; }
+.meta { display:flex; align-items:center; gap:12px; margin-bottom:6px; color:var(--muted) }
+
+.muted { color:var(--muted); margin-top:8px; }

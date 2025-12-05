@@ -1,53 +1,56 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Moment</title>
-<link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Moment Chat</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="container">
 
-<!-- LOGIN -->
-<div id="loginArea" class="card">
-  <h2>Login</h2>
-  <form autocomplete="off" onsubmit="return false;">
-    <input id="loginUser" name="loginUser" autocomplete="off" placeholder="Username" />
-    <input id="loginPass" name="loginPass" type="password" autocomplete="new-password" placeholder="Password" />
-    <button id="loginBtn" type="button">Login</button>
-  </form>
-<p><a href="#" id="showReg">Register here</a></p> 
-  <p id="loginMessage" class="muted"></p>
-</div>
+    <!-- LOGIN -->
+    <div id="loginArea" class="card">
+      <h2>Login</h2>
+      <input id="loginUser" placeholder="Username" />
+      <input id="loginPass" type="password" placeholder="Password" />
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button id="loginBtn">Login</button>
+        <a href="#" id="showReg">Register</a>
+      </div>
+      <p id="loginMessage" class="muted"></p>
+    </div>
 
-<!-- REGISTER -->
-<div id="registerArea" class="card" style="display:none;">
-  <h2>Register</h2>
-  <form autocomplete="off" onsubmit="return false;">
-    <input id="regUser" name="regUser" autocomplete="off" placeholder="Username" />
-    <input id="regPass" name="regPass" type="password" autocomplete="new-password" placeholder="Password" />
-    <button id="regBtn" type="button">Register</button>
-  </form>
-  <p><a href="#" id="backToLogin">Back to login</a></p>
-  <p id="registerMessage" class="muted"></p>
-</div>
+    <!-- REGISTER -->
+    <div id="registerArea" class="card" style="display:none;">
+      <h2>Register</h2>
+      <input id="regUser" placeholder="Username" />
+      <input id="regPass" type="password" placeholder="Password" />
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button id="regBtn">Register</button>
+        <a href="#" id="backToLogin">Back</a>
+      </div>
+      <p id="registerMessage" class="muted"></p>
+    </div>
 
-<!-- CHAT -->
-<div id="chatArea" class="card" style="display:none;">
-  <h2>Welcome — <span id="who"></span></h2>
-  <div id="messages" aria-live="polite"></div>
-  <div class="composer">
-    <input id="msgInput" placeholder="Type a message..." />
-    <button id="sendBtn">Send</button>
+    <!-- CHAT -->
+    <div id="chatArea" class="card" style="display:none;">
+      <h2>Chat</h2>
+      <div class="meta">
+        <span>Logged in as: <strong id="who">-</strong></span>
+        <button id="logoutBtn" style="margin-left:auto">Logout</button>
+      </div>
+
+      <div id="messages" class="messages"></div>
+
+      <div class="composer">
+        <input id="msgInput" placeholder="Type a message..." />
+        <button id="sendBtn">Send</button>
+      </div>
+    </div>
+
   </div>
-</div>
 
-<script src="main.js" defer></script>
+  <script src="main.js" defer></script>
 </body>
 </html>
-
-
-
-
-
-

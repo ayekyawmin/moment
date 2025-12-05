@@ -24,8 +24,6 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
-
-// -------------------- INIT DB --------------------
 async function initDB() {
   try {
     await pool.query(`
@@ -36,7 +34,6 @@ async function initDB() {
       );
     `);
 
-    // Default admin
     const hash = bcrypt.hashSync("admin123", 8);
     await pool.query(`
       INSERT INTO users(username,password,admin)
@@ -47,13 +44,11 @@ async function initDB() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS logins(
         username TEXT,
-        ip TEXT,
-        country TEXT,
-        region TEXT,
+        lastActive BIGINT,
         city TEXT,
-        org TEXT,
-        status TEXT,
-        lastActive BIGINT
+        region TEXT,
+        country TEXT,
+        UNIQUE(username)
       );
     `);
 
@@ -62,7 +57,6 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username TEXT,
         message TEXT,
-        type TEXT,
         time BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       );
     `);
@@ -73,229 +67,139 @@ async function initDB() {
   }
 }
 initDB();
-
-// -------------------- MIDDLEWARE --------------------
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-function escapeHtml(s) { if (!s) return ""; return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-
-// -------------------- REGISTER --------------------
+function escapeHtml(s) {
+  return s ? s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : "";
+}
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.json({ success: false, message: "Missing fields" });
+  if(!username || !password)
+    return res.json({ success:false, message:"Missing fields" });
 
   const hash = bcrypt.hashSync(password, 8);
   try {
-    await pool.query("INSERT INTO users(username,password) VALUES($1,$2)", [username, hash]);
-    res.json({ success: true, message: "Registered successfully" });
+    await pool.query("INSERT INTO users(username,password) VALUES($1,$2)",
+      [username, hash]
+    );
+    res.json({ success:true, message:"Registered" });
   } catch {
-    res.json({ success: false, message: "Username already exists" });
+    res.json({ success:false, message:"Username exists" });
   }
 });
 
-// -------------------- LOGIN --------------------
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const result = await pool.query("SELECT * FROM users WHERE username=$1", [username]);
-    const row = result.rows[0];
-    if (!row) return res.json({ success: false, message: "Invalid login" });
-    if (!bcrypt.compareSync(password, row.password)) return res.json({ success: false, message: "Invalid login" });
+    const r = await pool.query("SELECT * FROM users WHERE username=$1",[username]);
+    const row = r.rows[0];
+    if(!row) return res.json({success:false,message:"Invalid"});
+    if(!bcrypt.compareSync(password,row.password))
+      return res.json({success:false,message:"Invalid"});
 
-    res.json({ success: true, username: row.username, admin: row.admin });
-  } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: "Server error" });
+    res.json({ success:true, username:row.username, admin:row.admin });
+  } catch {
+    res.json({success:false,message:"Server"});
   }
 });
-
-// -------------------- GET MESSAGES --------------------
 app.get("/messages", async (req, res) => {
-  const result = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
-  res.json({ success: true, messages: result.rows });
+  const r = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
+  res.json({ success:true, messages:r.rows });
 });
-
-// Get all registered users (non-admin)
+// Get users
 app.get("/admin/users", async (req,res)=>{
-  const result = await pool.query("SELECT username,lastActive,city,region,country,admin FROM users LEFT JOIN logins USING(username) ORDER BY username ASC");
-  const users = result.rows.filter(u=>!u.admin);
-  res.json({success:true, users});
+  const r = await pool.query(`
+    SELECT username,lastActive,city,region,country,admin 
+    FROM users LEFT JOIN logins USING(username)
+    ORDER BY username ASC
+  `);
+  res.json({success:true, users:r.rows});
 });
 
-// Delete single user
+// Delete 1 user
 app.post("/admin/delete-user", async (req,res)=>{
   const { adminUsername, username } = req.body;
-  const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-  if(!adminCheck.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
-  await pool.query("DELETE FROM users WHERE username=$1 AND admin=false", [username]);
-  await pool.query("DELETE FROM logins WHERE username=$1", [username]);
-  res.json({success:true,message:`User ${username} deleted`});
+  const a = await pool.query("SELECT admin FROM users WHERE username=$1",[adminUsername]);
+  if(!a.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
+
+  await pool.query("DELETE FROM users WHERE username=$1 AND admin=false",[username]);
+  await pool.query("DELETE FROM logins WHERE username=$1",[username]);
+  res.json({success:true});
 });
 
-// Delete messages only
+// Delete messages
 app.post("/admin/delete-messages", async (req,res)=>{
   const { adminUsername } = req.body;
-  const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-  if(!adminCheck.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
+  const a = await pool.query("SELECT admin FROM users WHERE username=$1",[adminUsername]);
+  if(!a.rows[0]?.admin) return res.json({success:false});
+
   await pool.query("DELETE FROM messages");
-  res.json({success:true,message:"All messages deleted"});
+  res.json({success:true});
 });
 
-// Delete messages + logins + non-admin users
+// Delete everything
 app.post("/admin/delete-all", async (req,res)=>{
   const { adminUsername } = req.body;
-  const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-  if(!adminCheck.rows[0]?.admin) return res.json({success:false,message:"Unauthorized"});
+  const a = await pool.query("SELECT admin FROM users WHERE username=$1",[adminUsername]);
+  if(!a.rows[0]?.admin) return res.json({success:false});
+
   await pool.query("DELETE FROM messages");
   await pool.query("DELETE FROM logins");
   await pool.query("DELETE FROM users WHERE admin=false");
-  res.json({success:true,message:"All messages, logins, and non-admin users deleted"});
+  res.json({success:true});
 });
-
-
-// -------------------- ADMIN ENDPOINTS --------------------
-app.get("/admin/messages", async (req, res) => {
-  const result = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
-  res.json({ success: true, messages: result.rows });
-});
-
-app.get("/admin/users", async (req, res) => {
-  const result = await pool.query("SELECT username, admin FROM users ORDER BY username ASC");
-  res.json({ success: true, users: result.rows });
-});
-
-app.post("/admin/delete-user", async (req, res) => {
-  const { adminUsername, usernameToDelete } = req.body;
-  try {
-    const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-    if (!adminCheck.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
-
-    await pool.query("DELETE FROM users WHERE username=$1", [usernameToDelete]);
-    res.json({ success: true, message: `User '${usernameToDelete}' deleted` });
-  } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: "Server error" });
-  }
-});
-
-app.post("/admin/delete-messages", async (req, res) => {
-  const { adminUsername } = req.body;
-  try {
-    const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-    if (!adminCheck.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
-
-    await pool.query("DELETE FROM messages");
-    res.json({ success: true, message: "All messages deleted" });
-  } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: "Server error" });
-  }
-});
-
-app.post("/admin/delete-all", async (req, res) => {
-  const { adminUsername } = req.body;
-  try {
-    const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-    if (!adminCheck.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
-
-    await pool.query("DELETE FROM messages");
-    await pool.query("DELETE FROM logins");
-    await pool.query("DELETE FROM users WHERE admin=false"); // delete all non-admin users
-    res.json({ success: true, message: "All messages, logins and non-admin users deleted" });
-  } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: "Server error" });
-  }
-});
-
-app.post("/admin/update-username", async (req, res) => {
-  const { adminUsername, newUsername } = req.body;
-  try {
-    const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-    if (!adminCheck.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
-
-    const exists = await pool.query("SELECT username FROM users WHERE username=$1", [newUsername]);
-    if (exists.rows.length > 0) return res.json({ success: false, message: "Username already exists" });
-
-    await pool.query("UPDATE users SET username=$1 WHERE username=$2", [newUsername, adminUsername]);
-    res.json({ success: true, message: "Username updated" });
-  } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: "Server error" });
-  }
-});
-
-app.post("/admin/update-password", async (req, res) => {
-  const { adminUsername, newPassword } = req.body;
-  try {
-    const adminCheck = await pool.query("SELECT admin FROM users WHERE username=$1", [adminUsername]);
-    if (!adminCheck.rows[0]?.admin) return res.json({ success: false, message: "Unauthorized" });
-
-    const hash = bcrypt.hashSync(newPassword, 8);
-    await pool.query("UPDATE users SET password=$1 WHERE username=$2", [hash, adminUsername]);
-    res.json({ success: true, message: "Password updated" });
-  } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: "Server error" });
-  }
-});
-
-// -------------------- WEBSOCKET --------------------
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = app.listen(PORT, ()=>console.log("Running",PORT));
 const wss = new WebSocketServer({ server });
-const clients = new Map();
+const online = new Map();
 
-wss.on("connection", ws => {
-  let currentUser = null;
+wss.on("connection", ws=>{
+  let current = null;
 
-  ws.on("message", async msg => {
-    try {
-      const data = JSON.parse(msg);
+  ws.on("message", async msg=>{
+    const data = JSON.parse(msg);
 
-      if (data.type === "setUser") {
-        currentUser = data.username;
-        clients.set(ws, currentUser);
-      }
+    if(data.type==="setUser"){
+      current = data.username;
+      online.set(ws,current);
+      await pool.query(`
+        INSERT INTO logins(username,lastActive) 
+        VALUES($1,$2)
+        ON CONFLICT(username) DO UPDATE SET lastActive=$2
+      `,[current, Date.now()/1000]);
+      broadcastUsers();
+    }
 
-      if (data.type === "setAdmin") {
-        clients.set(ws, "admin");
-        broadcastUserList();
-      }
+    if(data.type==="setAdmin"){
+      current = data.username;
+      online.set(ws,"admin");
+      broadcastUsers();
+    }
 
-      if (data.type === "chat") {
-        if (!currentUser) return;
-        const text = escapeHtml(data.text);
-        await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)", [currentUser, text]);
-        broadcast({ type: "chat", user: currentUser, text });
-      }
-    } catch (err) { console.error(err); }
+    if(data.type==="chat"){
+      const text = escapeHtml(data.text);
+      await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)",[current,text]);
+      broadcast({type:"chat",user:current,text});
+    }
   });
 
-  ws.on("close", () => {
-    clients.delete(ws);
-    broadcastUserList();
+  ws.on("close",()=>{
+    online.delete(ws);
+    broadcastUsers();
   });
 });
 
-function broadcast(msg) {
-  const str = JSON.stringify(msg);
-  clients.forEach((v, ws) => {
-    if (ws.readyState === 1) ws.send(str);
+function broadcast(msg){
+  const s = JSON.stringify(msg);
+  online.forEach((v,ws)=>{
+    if(ws.readyState===1) ws.send(s);
   });
 }
 
-async function broadcastUserList() {
-  const res = await pool.query("SELECT username,status,lastActive,city,region,country FROM logins");
-  const users = res.rows.map(u => ({
-    username: u.username,
-    status: u.status || "offline",
-    lastActive: u.lastActive,
-    city: u.city,
-    region: u.region,
-    country: u.country
-  }));
-  broadcast({ type: "userList", users });
+async function broadcastUsers(){
+  const r = await pool.query(`
+    SELECT username,lastActive,city,region,country 
+    FROM logins
+  `);
+  broadcast({type:"userList", users:r.rows});
 }
-
-
