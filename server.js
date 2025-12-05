@@ -24,6 +24,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+
 async function initDB() {
   try {
     await pool.query(`
@@ -43,12 +44,11 @@ async function initDB() {
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS logins(
-        username TEXT,
+        username TEXT PRIMARY KEY,
         lastActive BIGINT,
         city TEXT,
         region TEXT,
-        country TEXT,
-        UNIQUE(username)
+        country TEXT
       );
     `);
 
@@ -57,7 +57,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username TEXT,
         message TEXT,
-        time BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+        time BIGINT
       );
     `);
 
@@ -67,12 +67,16 @@ async function initDB() {
   }
 }
 initDB();
+
+// -------------------- EXPRESS --------------------
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 function escapeHtml(s) {
   return s ? s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : "";
 }
+
+// -------------------- AUTH --------------------
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
   if(!username || !password)
@@ -80,9 +84,7 @@ app.post("/register", async (req, res) => {
 
   const hash = bcrypt.hashSync(password, 8);
   try {
-    await pool.query("INSERT INTO users(username,password) VALUES($1,$2)",
-      [username, hash]
-    );
+    await pool.query("INSERT INTO users(username,password) VALUES($1,$2)", [username, hash]);
     res.json({ success:true, message:"Registered" });
   } catch {
     res.json({ success:false, message:"Username exists" });
@@ -98,16 +100,30 @@ app.post("/login", async (req, res) => {
     if(!bcrypt.compareSync(password,row.password))
       return res.json({success:false,message:"Invalid"});
 
+    // record login
+    await pool.query(`
+      INSERT INTO logins(username,lastActive)
+      VALUES($1,$2)
+      ON CONFLICT(username) DO UPDATE SET lastActive=$2
+    `, [username, Math.floor(Date.now()/1000)]);
+
     res.json({ success:true, username:row.username, admin:row.admin });
-  } catch {
+  } catch(e) {
+    console.log(e);
     res.json({success:false,message:"Server"});
   }
 });
+
+// -------------------- MESSAGES --------------------
 app.get("/messages", async (req, res) => {
-  const r = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
+  const r = await pool.query(`
+    SELECT username AS user, message AS text, time
+    FROM messages ORDER BY time ASC
+  `);
   res.json({ success:true, messages:r.rows });
 });
-// Get users
+
+// -------------------- ADMIN --------------------
 app.get("/admin/users", async (req,res)=>{
   const r = await pool.query(`
     SELECT username,lastActive,city,region,country,admin 
@@ -117,7 +133,6 @@ app.get("/admin/users", async (req,res)=>{
   res.json({success:true, users:r.rows});
 });
 
-// Delete 1 user
 app.post("/admin/delete-user", async (req,res)=>{
   const { adminUsername, username } = req.body;
   const a = await pool.query("SELECT admin FROM users WHERE username=$1",[adminUsername]);
@@ -128,7 +143,6 @@ app.post("/admin/delete-user", async (req,res)=>{
   res.json({success:true});
 });
 
-// Delete messages
 app.post("/admin/delete-messages", async (req,res)=>{
   const { adminUsername } = req.body;
   const a = await pool.query("SELECT admin FROM users WHERE username=$1",[adminUsername]);
@@ -138,7 +152,6 @@ app.post("/admin/delete-messages", async (req,res)=>{
   res.json({success:true});
 });
 
-// Delete everything
 app.post("/admin/delete-all", async (req,res)=>{
   const { adminUsername } = req.body;
   const a = await pool.query("SELECT admin FROM users WHERE username=$1",[adminUsername]);
@@ -149,6 +162,8 @@ app.post("/admin/delete-all", async (req,res)=>{
   await pool.query("DELETE FROM users WHERE admin=false");
   res.json({success:true});
 });
+
+// -------------------- WEBSOCKET --------------------
 const server = app.listen(PORT, ()=>console.log("Running",PORT));
 const wss = new WebSocketServer({ server });
 const online = new Map();
@@ -157,29 +172,48 @@ wss.on("connection", ws=>{
   let current = null;
 
   ws.on("message", async msg=>{
-    const data = JSON.parse(msg);
+    let data;
+    try { data = JSON.parse(msg); }
+    catch { return; }
 
+    // Set normal user
     if(data.type==="setUser"){
       current = data.username;
       online.set(ws,current);
+
       await pool.query(`
-        INSERT INTO logins(username,lastActive) 
+        INSERT INTO logins(username,lastActive)
         VALUES($1,$2)
         ON CONFLICT(username) DO UPDATE SET lastActive=$2
-      `,[current, Date.now()/1000]);
+      `,[current, Math.floor(Date.now()/1000)]);
+
       broadcastUsers();
     }
 
+    // Set admin WS
     if(data.type==="setAdmin"){
       current = data.username;
       online.set(ws,"admin");
       broadcastUsers();
     }
 
+    // Chat
     if(data.type==="chat"){
+      if(!current) return;
       const text = escapeHtml(data.text);
-      await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)",[current,text]);
-      broadcast({type:"chat",user:current,text});
+      const time = Math.floor(Date.now()/1000);
+
+      await pool.query(
+        "INSERT INTO messages(username,message,time) VALUES($1,$2,$3)",
+        [current,text,time]
+      );
+
+      broadcast({
+        type:"chat",
+        user: current,
+        text,
+        time
+      });
     }
   });
 
