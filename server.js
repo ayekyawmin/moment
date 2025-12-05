@@ -35,6 +35,7 @@ async function initDB() {
       );
     `);
 
+    // default admin
     const hash = bcrypt.hashSync("admin123", 8);
     await pool.query(`
       INSERT INTO users(username,password,admin)
@@ -44,7 +45,7 @@ async function initDB() {
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS logins(
-        username TEXT PRIMARY KEY,
+        username TEXT UNIQUE,
         lastActive BIGINT,
         city TEXT,
         region TEXT,
@@ -57,7 +58,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username TEXT,
         message TEXT,
-        time BIGINT
+        time BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       );
     `);
 
@@ -68,7 +69,7 @@ async function initDB() {
 }
 initDB();
 
-// -------------------- EXPRESS --------------------
+// -------------------- APP --------------------
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -100,26 +101,23 @@ app.post("/login", async (req, res) => {
     if(!bcrypt.compareSync(password,row.password))
       return res.json({success:false,message:"Invalid"});
 
-    // record login
+    // record login immediately
     await pool.query(`
       INSERT INTO logins(username,lastActive)
       VALUES($1,$2)
       ON CONFLICT(username) DO UPDATE SET lastActive=$2
-    `, [username, Math.floor(Date.now()/1000)]);
+    `,[row.username, Math.floor(Date.now()/1000)]);
 
     res.json({ success:true, username:row.username, admin:row.admin });
-  } catch(e) {
-    console.log(e);
+  } catch (err) {
+    console.error(err);
     res.json({success:false,message:"Server"});
   }
 });
 
 // -------------------- MESSAGES --------------------
 app.get("/messages", async (req, res) => {
-  const r = await pool.query(`
-    SELECT username AS user, message AS text, time
-    FROM messages ORDER BY time ASC
-  `);
+  const r = await pool.query("SELECT username,message,time FROM messages ORDER BY time ASC");
   res.json({ success:true, messages:r.rows });
 });
 
@@ -171,49 +169,35 @@ const online = new Map();
 wss.on("connection", ws=>{
   let current = null;
 
-  ws.on("message", async msg=>{
+  ws.on("message", async raw=>{
     let data;
-    try { data = JSON.parse(msg); }
-    catch { return; }
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return;
+    }
 
-    // Set normal user
-    if(data.type==="setUser"){
+    if(data.type==="setUser" && data.username){
       current = data.username;
       online.set(ws,current);
-
       await pool.query(`
-        INSERT INTO logins(username,lastActive)
+        INSERT INTO logins(username,lastActive) 
         VALUES($1,$2)
         ON CONFLICT(username) DO UPDATE SET lastActive=$2
       `,[current, Math.floor(Date.now()/1000)]);
-
       broadcastUsers();
     }
 
-    // Set admin WS
-    if(data.type==="setAdmin"){
+    if(data.type==="setAdmin" && data.username){
       current = data.username;
       online.set(ws,"admin");
       broadcastUsers();
     }
 
-    // Chat
-    if(data.type==="chat"){
-      if(!current) return;
+    if(data.type==="chat" && current && data.text){
       const text = escapeHtml(data.text);
-      const time = Math.floor(Date.now()/1000);
-
-      await pool.query(
-        "INSERT INTO messages(username,message,time) VALUES($1,$2,$3)",
-        [current,text,time]
-      );
-
-      broadcast({
-        type:"chat",
-        user: current,
-        text,
-        time
-      });
+      await pool.query("INSERT INTO messages(username,message) VALUES($1,$2)",[current,text]);
+      broadcast({type:"chat",user:current,text});
     }
   });
 
